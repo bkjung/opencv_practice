@@ -1,13 +1,10 @@
 #!/usr/bin/env python
 import numpy as np
-import cv2, sys, time
+import cv2, sys, time, math
 import calibrate_mj
 from matplotlib import pyplot as plt
 
 if __name__ == "__main__":
-
-    # if(len(sys.argv) !=6):
-    #     print("Wrong input")
 
     board_w=4 # number of horizontal corners
     board_h=4 # number of vertical corners
@@ -21,9 +18,20 @@ if __name__ == "__main__":
 
     i=0
     z=0 #to print number of frames
-    cap = cv2.VideoCapture(2)
+    cap = cv2.VideoCapture(1)
 
-    ret, mtx, dist, rvecs, tves=calibrate_mj.calibration(cap, board_w, board_h, n_board)
+
+    ##############New Calibration###################################
+    # ret, mtx, dist, rvecs, tves=calibrate_mj.calibration(cap, board_w, board_h, n_board)
+    ##############Load Calibration##################################
+    cv_file=cv2.FileStorage("Intrinsic.xml", cv2.FILE_STORAGE_READ)
+    cv_file2=cv2.FileStorage("Distortion.xml",cv2.FILE_STORAGE_READ)
+    mtx=cv_file.getNode("Intrinsic").mat()
+    dist=cv_file2.getNode("Distortion").mat()
+    cv_file.release()
+    cv_file2.release()
+    ################################################################
+
     found= False
 
     while found==False:
@@ -48,7 +56,7 @@ if __name__ == "__main__":
         cv2.imshow("Chessboard",image)
         cv2.waitKey(33)
 
-
+    print(corners)
     print("All mapping completed")
     #Get Subpixel accuracy on those corners
     cv2.cornerSubPix(gray, corners, board_sz, (-1,-1),criteria )
@@ -60,14 +68,40 @@ if __name__ == "__main__":
     imgPts=np.zeros((4,2), dtype=np.float32)
 
     objPts[0]=[0,0]
-    objPts[1]=[board_w-1, 0]
-    objPts[2]=[0,board_h-1]
-    objPts[3]=[board_w-1, board_h-1]
+    objPts[1]=[(board_w-1)*100, 0]
+    objPts[2]=[0,(board_h-1)*100]
+    objPts[3]=[(board_w-1)*100, (board_h-1)*100]
 
-    imgPts[0]=corners[0][0]
-    imgPts[1]=corners[board_w-1][0]
-    imgPts[2]=corners[(board_h-1)*board_w][0]
-    imgPts[3]=corners[(board_h-1)*board_w+board_w-1][0]
+    pi=math.pi
+    theta= math.atan2((corners[0][0][1]-corners[(board_h-1)*board_w+board_w-1][0][1]),-(corners[0][0][0]-corners[(board_h-1)*board_w+board_w-1][0][0]))
+    print(-(corners[0][0][0]-corners[(board_h-1)*board_w+board_w-1][0][0]))
+    print(corners[0][0][1]-corners[(board_h-1)*board_w+board_w-1][0][1])
+    print(theta/math.pi)
+
+    if theta>=0.5*pi: 
+        print(1) 
+        imgPts[0]=corners[(board_h-1)*board_w+board_w-1][0]
+        imgPts[1]=corners[(board_h-1)*board_w][0]
+        imgPts[2]=corners[board_w-1][0]
+        imgPts[3]=corners[0][0]
+    elif theta<-0.5*pi:
+        print(2)   
+        imgPts[0]=corners[(board_h-1)*board_w][0]   
+        imgPts[1]=corners[0][0]
+        imgPts[2]=corners[(board_h-1)*board_w+board_w-1][0] 
+        imgPts[3]=corners[board_w-1][0]
+    elif theta>-pi*0.5 and theta<0:
+        print(3)
+        imgPts[0]=corners[0][0]
+        imgPts[1]=corners[board_w-1][0]
+        imgPts[2]=corners[(board_h-1)*board_w][0]
+        imgPts[3]=corners[(board_h-1)*board_w+board_w-1][0]
+    else:
+        print(4)
+        imgPts[0]=corners[board_w-1][0]
+        imgPts[1]=corners[(board_h-1)*board_w+board_w-1][0]  
+        imgPts[2]=corners[0][0]
+        imgPts[3]=corners[(board_h-1)*board_w][0]                                                                                                                                                                                                                                                                                                                                                                                                     
 
     imgPts_int=imgPts.astype(int)
 
@@ -82,9 +116,14 @@ if __name__ == "__main__":
     cv2.imshow("Chessboard", image)
 
     print(imgPts)
+    print(objPts)
 
     #Find the Homography
-    H=cv2.getPerspectiveTransform(imgPts,objPts*100)
+    H=cv2.getPerspectiveTransform(imgPts,objPts)
+
+    cv_file=cv2.FileStorage("H.xml", cv2.FILE_STORAGE_WRITE)
+    cv_file.write("H.xml", H)
+    cv_file.release()
 
     #Let the user adjust the z height of the view
     Z=10
@@ -95,12 +134,12 @@ if __name__ == "__main__":
     #Loop to allow user to play with height
     #escape key stops
     while(key < 27):
-        H[2][2]=Z
+        # H[2][2]=Z
         bird_image=cv2.warpPerspective(image, H, (1000,1000))
         cv2.imshow("Birds_Eye", bird_image)
-        # plt.subplot(121),plt.imshow(image),plt.title('image')
-        # plt.subplot(122),plt.imshow(bird_image),plt.title('Perspective')
-        # plt.show()
+        plt.subplot(121),plt.imshow(image),plt.title('image')
+        plt.subplot(122),plt.imshow(bird_image),plt.title('Perspective')
+        plt.show()
         key=cv2.waitKey(0)
         if(key == ord('u')):
             Z+=0.5
@@ -109,9 +148,5 @@ if __name__ == "__main__":
             Z-=0.5
             print(key)
 
-    cv_file=cv2.FileStorage("H.xml", cv2.FILE_STORAGE_WRITE)
-    cv_file.write("H.xml", H)
-    cv_file.release()
-
     cap.release()
-    cv2.destroyAllWindows()
+    cv2.destroyAllWindows()                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
